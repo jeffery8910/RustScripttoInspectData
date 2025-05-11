@@ -500,40 +500,63 @@ impl eframe::App for CsvEncodingApp {
 
             ui.separator();
             ui.horizontal(|ui|{ ui.heading("Progress Log"); if ui.button("Clear Log").clicked() { self.progress_log.clear(); } });
-
-            egui::ScrollArea::vertical().max_height(200.0).stick_to_bottom(true).show(ui, |ui| {
-                for entry in &self.progress_log { ui.label(entry); }
-            });
+        egui::ScrollArea::vertical()
+            .id_source("progress_log_scroll") // 給日誌滾動區一個ID
+            .max_height(150.0) // 給日誌一個固定的最大高度，以免佔用過多空間
+            .stick_to_bottom(true)
+            .auto_shrink([false, true]) // 水平不收縮，垂直如果內容少於max_height則收縮
+            .show(ui, |ui| {
+            for entry in &self.progress_log { ui.label(entry); }
+        });
 
             ui.separator();
             ui.heading(format!("Results ({})", self.processing_status));
 
-            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                if self.results.is_empty() && !self.is_processing { ui.label("No results yet. Select a file, enter encodings, and click 'Run Checks'."); }
-                else {
-                    egui::Grid::new("results_table").striped(true).num_columns(8).min_col_width(60.0).show(ui, |ui| {
-                        ui.strong("Tool"); ui.strong("File"); ui.strong("Encoding"); ui.strong("Status");
-                        ui.strong("Rows"); ui.strong("Cols"); ui.strong("Cells"); ui.strong("Error/Notes");
-                        ui.end_row();
-                        for res in &self.results {
-                            ui.label(&res.tool);
-                            ui.label(truncate_middle_egui(&res.file_path, 15));
-                            ui.label(&res.encoding_tested);
-                            match res.status.as_str() {
-                                "Success" => ui.colored_label(egui::Color32::GREEN, &res.status),
-                                _ => ui.colored_label(egui::Color32::LIGHT_RED, &res.status),
-                            };
-                            ui.label(res.rows.map_or("N/A".to_string(), |v| v.to_string()));
-                            ui.label(res.cols.map_or("N/A".to_string(), |v| v.to_string()));
-                            ui.label(res.cells.map_or("N/A".to_string(), |v| v.to_string()));
-                                let error_text = res.error_message.as_deref().unwrap_or("");
-                            ui.add(egui::Label::new(error_text).wrap(true));
-                            ui.end_row();
+            // 用一個 child Ui 來獲取剩餘空間
+            // 這樣可以確保 available_height 是針對這個特定區域的
+            ui.group(|ui| { // 使用 group 或其他容器來隔離 available_height 的計算
+                let available_height = ui.available_height();
+                // eprintln!("Results ScrollArea available_height: {}", available_height); // 調試日誌
+                egui::ScrollArea::both()
+                    .id_source("results_scroll_area") // 給結果滾動區一個ID
+                    .max_height(available_height.max(100.0)) // 設置最大高度，至少給100像素
+                    .stick_to_bottom(true)
+                    .auto_shrink([false, false]) // 確保它填充而不是僅包裹內容
+                    .show(ui, |ui| {
+                        if self.results.is_empty() && !self.is_processing {
+                            ui.label("No results yet. Select a file, enter encodings, and click 'Run Checks'.");
+                        } else {
+                            egui::Grid::new("results_table")
+                                .striped(true)
+                                .num_columns(8)
+                                .min_col_width(60.0)
+                                .show(ui, |ui| {
+                                    // Headers
+                                    ui.strong("Tool"); ui.strong("File"); ui.strong("Encoding"); ui.strong("Status");
+                                    ui.strong("Rows"); ui.strong("Cols"); ui.strong("Cells"); ui.strong("Error/Notes");
+                                    ui.end_row();
+
+                                    for res in &self.results {
+                                        ui.label(&res.tool);
+                                        ui.label(truncate_middle_egui(&res.file_path, 15));
+                                        ui.label(&res.encoding_tested);
+                                        match res.status.as_str() {
+                                            "Success" => ui.colored_label(egui::Color32::GREEN, &res.status),
+                                            _ => ui.colored_label(egui::Color32::LIGHT_RED, &res.status),
+                                        };
+                                        ui.label(res.rows.map_or("N/A".to_string(), |v| v.to_string()));
+                                        ui.label(res.cols.map_or("N/A".to_string(), |v| v.to_string()));
+                                        ui.label(res.cells.map_or("N/A".to_string(), |v| v.to_string()));
+                                        let error_text = res.error_message.as_deref().unwrap_or("");
+                                        ui.add(egui::Label::new(error_text).wrap(true));
+                                        ui.end_row();
+                                    }
+                                });
                         }
                     });
-                }
-            });
-        });
+            }); // group 結束
+        }); // CentralPanel 結束
+
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
     }
 }

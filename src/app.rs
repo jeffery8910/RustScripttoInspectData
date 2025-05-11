@@ -526,7 +526,8 @@ impl eframe::App for CsvEncodingApp {
                             ui.label(res.rows.map_or("N/A".to_string(), |v| v.to_string()));
                             ui.label(res.cols.map_or("N/A".to_string(), |v| v.to_string()));
                             ui.label(res.cells.map_or("N/A".to_string(), |v| v.to_string()));
-                            ui.label(truncate_middle_egui(res.error_message.as_deref().unwrap_or(""), 50));
+                                let error_text = res.error_message.as_deref().unwrap_or("");
+                            ui.add(egui::Label::new(error_text).wrap(true));
                             ui.end_row();
                         }
                     });

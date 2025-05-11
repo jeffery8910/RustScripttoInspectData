@@ -139,7 +139,7 @@ Rust 主程式負責調用這些腳本，傳遞 CSV 檔案路徑、待測試的�
 
 ## 許可證
 
-本項目採用雙重許可：MIT 和 Apache License 2.0。您可以根據您的需求選擇其中任一許可證。
+本項目採用雙重許可：MIT 和 Apache License 2.0。
 
 *   [MIT License](LICENSE-MIT)
 *   [Apache License 2.0](LICENSE-APACHE)

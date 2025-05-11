@@ -1,0 +1,46 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ "main" ] # 或者您的主要分支名稱，例如 "master"
+  pull_request:
+    branches: [ "main" ] # 或者您的主要分支名稱
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_test:
+    name: Build and Test
+    runs-on: ubuntu-latest # 您也可以選擇 windows-latest 或 macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 # 使用最新版本的 checkout action
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable # 使用 dtolnay 提供的 action 來設定 Rust 工具鏈 (推薦)
+        with:
+          toolchain: stable # 您可以指定 stable, beta, nightly, 或特定版本如 1.70.0
+          # components: clippy, rustfmt # 如果需要明確安裝 clippy 和 rustfmt
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2 # 使用 Swatinem/rust-cache 來緩存依賴
+        with:
+          # 可選: 改變緩存鍵的前綴，如果 Cargo.lock 變化不大但你想強制刷新依賴
+          # prefix-key: "v1"
+          # 可選: 緩存 target 目錄，如果你的測試或構建依賴它
+          # cache-target: true
+          save-if: ${{ github.ref == 'refs/heads/main' }} # 只在 main 分支的構建中保存緩存
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Run Clippy (Linter)
+        run: cargo clippy -- -D warnings # 將所有 Clippy 警告視為錯誤
+
+      - name: Check formatting
+        run: cargo fmt --check

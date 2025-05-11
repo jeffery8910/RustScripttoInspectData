@@ -1,0 +1,1 @@
+C:\Users\USER\Desktop\csv-encoding-orchestrator-rust\target\debug\csv_encoding_orchestrator_egui.exe: C:\Users\USER\Desktop\csv-encoding-orchestrator-rust\assets\icon.png C:\Users\USER\Desktop\csv-encoding-orchestrator-rust\src\app.rs C:\Users\USER\Desktop\csv-encoding-orchestrator-rust\src\dep_check.rs C:\Users\USER\Desktop\csv-encoding-orchestrator-rust\src\main.rs

@@ -93,14 +93,18 @@ impl CsvEncodingApp {
     }
 
     fn run_checks(&mut self) {
-        if self.is_processing { return; }
+        if self.is_processing {
+            return;
+        }
         if self.csv_file_path.is_none() {
             self.processing_status = "Error: Please select a CSV file.".to_string();
             self.progress_log.push(self.processing_status.clone());
             return;
         }
         if !self.dependencies.all_ok() || !self.script_paths_ok {
-            self.processing_status = "Error: Dependencies or script paths not met. Check 'System Dependencies' section.".to_string();
+            self.processing_status =
+                "Error: Dependencies or script paths not met. Check 'System Dependencies' section."
+                    .to_string();
             self.progress_log.push(self.processing_status.clone());
             return;
         }
@@ -112,8 +116,12 @@ impl CsvEncodingApp {
         self.progress_log.push("Starting checks...".to_string());
 
         let csv_file = self.csv_file_path.clone().unwrap();
-        let encodings: Vec<String> = self.encodings_input.split(',')
-            .map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        let encodings: Vec<String> = self
+            .encodings_input
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
 
         if encodings.is_empty() {
             self.processing_status = "Error: Please enter at least one encoding.".to_string();
@@ -122,8 +130,18 @@ impl CsvEncodingApp {
             return;
         }
 
-        let r_executable = self.dependencies.r_script.get_path().expect("Rscript path checked").clone();
-        let python_executable = self.dependencies.python_interpreter.get_path().expect("Python path checked").clone();
+        let r_executable = self
+            .dependencies
+            .r_script
+            .get_path()
+            .expect("Rscript path checked")
+            .clone();
+        let python_executable = self
+            .dependencies
+            .python_interpreter
+            .get_path()
+            .expect("Python path checked")
+            .clone();
         let r_script_path_clone = self.r_script_path.clone();
         let python_script_path_clone = self.python_script_path.clone();
         let sender_clone = self.sender.clone();
@@ -133,113 +151,222 @@ impl CsvEncodingApp {
             let mut all_script_outputs: Vec<ScriptOutput> = Vec::new();
 
             if !csv_file.exists() || !csv_file.is_file() {
-                let _ = sender_clone.send(AppMessage::ProcessingError(format!("CSV file not found: {:?}", csv_file)));
+                let _ = sender_clone.send(AppMessage::ProcessingError(format!(
+                    "CSV file not found: {:?}",
+                    csv_file
+                )));
                 return;
             }
             let csv_file_abs_path = match csv_file.canonicalize() {
                 Ok(p) => p,
                 Err(e) => {
-                    let _ = sender_clone.send(AppMessage::ProcessingError(format!("Error getting absolute path for CSV: {}", e)));
+                    let _ = sender_clone.send(AppMessage::ProcessingError(format!(
+                        "Error getting absolute path for CSV: {}",
+                        e
+                    )));
                     return;
                 }
             };
 
             for encoding in &encodings {
-                let _ = sender_clone.send(AppMessage::UpdateProgress(format!("\nTesting with encoding: {}", encoding)));
+                let _ = sender_clone.send(AppMessage::UpdateProgress(format!(
+                    "\nTesting with encoding: {}",
+                    encoding
+                )));
 
                 // --- Execute R Script ---
-                let r_output_temp_file = match tempfile::Builder::new().prefix("r_gui_").suffix(".csv").tempfile() {
+                let r_output_temp_file = match tempfile::Builder::new()
+                    .prefix("r_gui_")
+                    .suffix(".csv")
+                    .tempfile()
+                {
                     Ok(f) => f,
-                    Err(e) => { let _ = sender_clone.send(AppMessage::ProcessingError(format!("Failed to create R temp file: {}",e))); continue; }
+                    Err(e) => {
+                        let _ = sender_clone.send(AppMessage::ProcessingError(format!(
+                            "Failed to create R temp file: {}",
+                            e
+                        )));
+                        continue;
+                    }
                 };
                 let r_output_path_string = match r_output_temp_file.path().to_str() {
                     Some(s) => s.to_string(),
                     None => {
-                        let _ = sender_clone.send(AppMessage::ProcessingError("R temp file path invalid UTF-8".to_string()));
+                        let _ = sender_clone.send(AppMessage::ProcessingError(
+                            "R temp file path invalid UTF-8".to_string(),
+                        ));
                         continue;
                     }
                 };
 
-                let _ = sender_clone.send(AppMessage::UpdateProgress(format!("  Running R script for encoding: {}...", encoding)));
+                let _ = sender_clone.send(AppMessage::UpdateProgress(format!(
+                    "  Running R script for encoding: {}...",
+                    encoding
+                )));
                 let r_cmd_output = cmd!(
-                    &r_executable, &r_script_path_clone, &csv_file_abs_path,
+                    &r_executable,
+                    &r_script_path_clone,
+                    &csv_file_abs_path,
                     &r_output_path_string,
                     encoding
-                ).stderr_to_stdout().stdout_capture().run();
+                )
+                .stderr_to_stdout()
+                .stdout_capture()
+                .run();
 
                 match r_cmd_output {
                     Ok(output) => {
                         let stdout_str = String::from_utf8_lossy(&output.stdout);
                         if output.status.success() {
-                            let _ = sender_clone.send(AppMessage::UpdateProgress(format!("    R script finished successfully for {}.", encoding)));
+                            let _ = sender_clone.send(AppMessage::UpdateProgress(format!(
+                                "    R script finished successfully for {}.",
+                                encoding
+                            )));
                             match parse_script_output_csv_from_app(r_output_temp_file.path()) {
                                 Ok(r_results) => {
-                                    for res in r_results { all_script_outputs.push(res.clone()); let _ = sender_clone.send(AppMessage::NewResult(res)); }
+                                    for res in r_results {
+                                        all_script_outputs.push(res.clone());
+                                        let _ = sender_clone.send(AppMessage::NewResult(res));
+                                    }
                                 }
                                 Err(e) => {
                                     let err_msg = format!("    Error parsing R script output for {}: {}. R script stdout: {}", encoding, e, stdout_str);
-                                    let _ = sender_clone.send(AppMessage::UpdateProgress(err_msg.clone()));
-                                    all_script_outputs.push(create_error_output("R_Orchestrator", &csv_file, encoding, "OutputParseFailure", &err_msg));
+                                    let _ = sender_clone
+                                        .send(AppMessage::UpdateProgress(err_msg.clone()));
+                                    all_script_outputs.push(create_error_output(
+                                        "R_Orchestrator",
+                                        &csv_file,
+                                        encoding,
+                                        "OutputParseFailure",
+                                        &err_msg,
+                                    ));
                                 }
                             }
                         } else {
-                            let err_msg = format!( "    R script failed for {} with status: {:?}. Output:\n{}", encoding, output.status, stdout_str);
+                            let err_msg = format!(
+                                "    R script failed for {} with status: {:?}. Output:\n{}",
+                                encoding, output.status, stdout_str
+                            );
                             let _ = sender_clone.send(AppMessage::UpdateProgress(err_msg.clone()));
-                            all_script_outputs.push(create_error_output("R_Overall", &csv_file, encoding, "ExecutionFailure", &err_msg));
+                            all_script_outputs.push(create_error_output(
+                                "R_Overall",
+                                &csv_file,
+                                encoding,
+                                "ExecutionFailure",
+                                &err_msg,
+                            ));
                         }
                     }
                     Err(e) => {
-                        let err_msg = format!("    Failed to execute R script for {}: {}", encoding, e);
+                        let err_msg =
+                            format!("    Failed to execute R script for {}: {}", encoding, e);
                         let _ = sender_clone.send(AppMessage::UpdateProgress(err_msg.clone()));
-                        all_script_outputs.push(create_error_output("R_Overall", &csv_file, encoding, "ExecutionError", &err_msg));
+                        all_script_outputs.push(create_error_output(
+                            "R_Overall",
+                            &csv_file,
+                            encoding,
+                            "ExecutionError",
+                            &err_msg,
+                        ));
                     }
                 }
 
                 // --- Execute Python Script ---
-                let py_output_temp_file = match tempfile::Builder::new().prefix("py_gui_").suffix(".csv").tempfile() {
+                let py_output_temp_file = match tempfile::Builder::new()
+                    .prefix("py_gui_")
+                    .suffix(".csv")
+                    .tempfile()
+                {
                     Ok(f) => f,
-                    Err(e) => { let _ = sender_clone.send(AppMessage::ProcessingError(format!("Failed to create Py temp file: {}",e))); continue; }
+                    Err(e) => {
+                        let _ = sender_clone.send(AppMessage::ProcessingError(format!(
+                            "Failed to create Py temp file: {}",
+                            e
+                        )));
+                        continue;
+                    }
                 };
                 let py_output_path_string = match py_output_temp_file.path().to_str() {
                     Some(s) => s.to_string(),
                     None => {
-                        let _ = sender_clone.send(AppMessage::ProcessingError("Py temp file path invalid UTF-8".to_string()));
+                        let _ = sender_clone.send(AppMessage::ProcessingError(
+                            "Py temp file path invalid UTF-8".to_string(),
+                        ));
                         continue;
                     }
                 };
 
-                let _ = sender_clone.send(AppMessage::UpdateProgress(format!("  Running Python script for encoding: {}...", encoding)));
-                 let py_cmd_output = cmd!(
-                    &python_executable, &python_script_path_clone, &csv_file_abs_path,
+                let _ = sender_clone.send(AppMessage::UpdateProgress(format!(
+                    "  Running Python script for encoding: {}...",
+                    encoding
+                )));
+                let py_cmd_output = cmd!(
+                    &python_executable,
+                    &python_script_path_clone,
+                    &csv_file_abs_path,
                     &py_output_path_string,
                     encoding
-                ).stderr_to_stdout().stdout_capture().run();
+                )
+                .stderr_to_stdout()
+                .stdout_capture()
+                .run();
 
-                 match py_cmd_output {
+                match py_cmd_output {
                     Ok(output) => {
                         let stdout_str = String::from_utf8_lossy(&output.stdout);
                         if output.status.success() {
-                            let _ = sender_clone.send(AppMessage::UpdateProgress(format!("    Python script finished successfully for {}.", encoding)));
+                            let _ = sender_clone.send(AppMessage::UpdateProgress(format!(
+                                "    Python script finished successfully for {}.",
+                                encoding
+                            )));
                             match parse_script_output_csv_from_app(py_output_temp_file.path()) {
                                 Ok(py_results) => {
-                                     for res in py_results { all_script_outputs.push(res.clone()); let _ = sender_clone.send(AppMessage::NewResult(res)); }
+                                    for res in py_results {
+                                        all_script_outputs.push(res.clone());
+                                        let _ = sender_clone.send(AppMessage::NewResult(res));
+                                    }
                                 }
                                 Err(e) => {
                                     let err_msg = format!("    Error parsing Python script output for {}: {}. Python script stdout: {}", encoding, e, stdout_str);
-                                    let _ = sender_clone.send(AppMessage::UpdateProgress(err_msg.clone()));
-                                    all_script_outputs.push(create_error_output("Python_Orchestrator", &csv_file, encoding, "OutputParseFailure", &err_msg));
+                                    let _ = sender_clone
+                                        .send(AppMessage::UpdateProgress(err_msg.clone()));
+                                    all_script_outputs.push(create_error_output(
+                                        "Python_Orchestrator",
+                                        &csv_file,
+                                        encoding,
+                                        "OutputParseFailure",
+                                        &err_msg,
+                                    ));
                                 }
                             }
                         } else {
-                            let err_msg = format!( "    Python script failed for {} with status: {:?}. Output:\n{}", encoding, output.status, stdout_str);
+                            let err_msg = format!(
+                                "    Python script failed for {} with status: {:?}. Output:\n{}",
+                                encoding, output.status, stdout_str
+                            );
                             let _ = sender_clone.send(AppMessage::UpdateProgress(err_msg.clone()));
-                            all_script_outputs.push(create_error_output("Python_Overall", &csv_file, encoding, "ExecutionFailure", &err_msg));
+                            all_script_outputs.push(create_error_output(
+                                "Python_Overall",
+                                &csv_file,
+                                encoding,
+                                "ExecutionFailure",
+                                &err_msg,
+                            ));
                         }
                     }
                     Err(e) => {
-                        let err_msg = format!("    Failed to execute Python script for {}: {}", encoding, e);
+                        let err_msg = format!(
+                            "    Failed to execute Python script for {}: {}",
+                            encoding, e
+                        );
                         let _ = sender_clone.send(AppMessage::UpdateProgress(err_msg.clone()));
-                        all_script_outputs.push(create_error_output("Python_Overall", &csv_file, encoding, "ExecutionError", &err_msg));
+                        all_script_outputs.push(create_error_output(
+                            "Python_Overall",
+                            &csv_file,
+                            encoding,
+                            "ExecutionError",
+                            &err_msg,
+                        ));
                     }
                 }
             }
@@ -277,25 +404,29 @@ impl CsvEncodingApp {
 }
 
 fn render_dep_status_gui(ui: &mut egui::Ui, name: &str, status: &DependencyStatus) {
-    ui.horizontal(|ui| {
-        match status {
-            DependencyStatus::Ok(path) => {
-                ui.colored_label(egui::Color32::GREEN, "✓");
-                ui.label(format!("{}: Found", name));
-                if name == "Rscript" || name == "Python (python/python3)" { ui.weak(format!("(at {:?})", path)); }
+    ui.horizontal(|ui| match status {
+        DependencyStatus::Ok(path) => {
+            ui.colored_label(egui::Color32::GREEN, "✓");
+            ui.label(format!("{}: Found", name));
+            if name == "Rscript" || name == "Python (python/python3)" {
+                ui.weak(format!("(at {:?})", path));
             }
-            DependencyStatus::NotFound => {
-                ui.colored_label(egui::Color32::RED, "✗");
-                ui.label(format!("{}: Not found in PATH.", name));
-            }
-            DependencyStatus::PackageMissing(pkg_name) => {
-                ui.colored_label(egui::Color32::RED, "✗");
-                ui.label(format!("{}: Package '{}' not installed.", name, pkg_name));
-            }
-            DependencyStatus::Error(err) => {
-                ui.colored_label(egui::Color32::YELLOW, "⚠️");
-                ui.label(format!("{}: Check error - {}", name, truncate_middle_egui(err, 60)));
-            }
+        }
+        DependencyStatus::NotFound => {
+            ui.colored_label(egui::Color32::RED, "✗");
+            ui.label(format!("{}: Not found in PATH.", name));
+        }
+        DependencyStatus::PackageMissing(pkg_name) => {
+            ui.colored_label(egui::Color32::RED, "✗");
+            ui.label(format!("{}: Package '{}' not installed.", name, pkg_name));
+        }
+        DependencyStatus::Error(err) => {
+            ui.colored_label(egui::Color32::YELLOW, "⚠️");
+            ui.label(format!(
+                "{}: Check error - {}",
+                name,
+                truncate_middle_egui(err, 60)
+            ));
         }
     });
 }
@@ -308,7 +439,8 @@ impl eframe::App for CsvEncodingApp {
                     self.processing_status = "Processing...".to_string();
                     self.progress_log.push("Processing started.".to_string());
                 }
-                AppMessage::NewResult(_res) => { /* Results are now collected and sent with ProcessingFinished */ }
+                AppMessage::NewResult(_res) => { /* Results are now collected and sent with ProcessingFinished */
+                }
                 AppMessage::ProcessingFinished(all_outputs) => {
                     self.is_processing = false;
                     self.results = all_outputs;
@@ -320,7 +452,9 @@ impl eframe::App for CsvEncodingApp {
                     self.processing_status = format!("Error: {}", err);
                     self.progress_log.push(format!("ERROR: {}", err));
                 }
-                AppMessage::UpdateProgress(log_entry) => { self.progress_log.push(log_entry); }
+                AppMessage::UpdateProgress(log_entry) => {
+                    self.progress_log.push(log_entry);
+                }
             }
         }
 
@@ -403,8 +537,12 @@ impl eframe::App for CsvEncodingApp {
     }
 }
 
-fn parse_script_output_csv_from_app(file_path: &Path) -> Result<Vec<ScriptOutput>, Box<dyn std::error::Error + Send + Sync>> {
-    if !file_path.exists() { return Err(format!("Script output CSV file not found: {:?}", file_path).into()); }
+fn parse_script_output_csv_from_app(
+    file_path: &Path,
+) -> Result<Vec<ScriptOutput>, Box<dyn std::error::Error + Send + Sync>> {
+    if !file_path.exists() {
+        return Err(format!("Script output CSV file not found: {:?}", file_path).into());
+    }
     if std::fs::metadata(file_path)?.len() == 0 {
         eprintln!("Warning: Script output file {:?} is empty.", file_path);
         return Ok(Vec::new());
@@ -415,7 +553,12 @@ fn parse_script_output_csv_from_app(file_path: &Path) -> Result<Vec<ScriptOutput
         match result {
             Ok(record) => results.push(record),
             Err(e) => {
-                let err_msg = format!("Failed to deserialize record {} from {:?}: {}", i + 1, file_path, e);
+                let err_msg = format!(
+                    "Failed to deserialize record {} from {:?}: {}",
+                    i + 1,
+                    file_path,
+                    e
+                );
                 eprintln!("{}", err_msg);
                 return Err(err_msg.into());
             }
@@ -424,21 +567,37 @@ fn parse_script_output_csv_from_app(file_path: &Path) -> Result<Vec<ScriptOutput
     Ok(results)
 }
 
-fn create_error_output(tool: &str, csv_file: &Path, encoding: &str, status: &str, error_message: &str) -> ScriptOutput {
+fn create_error_output(
+    tool: &str,
+    csv_file: &Path,
+    encoding: &str,
+    status: &str,
+    error_message: &str,
+) -> ScriptOutput {
     ScriptOutput {
         tool: tool.to_string(),
-        file_path: csv_file.file_name().unwrap_or_default().to_string_lossy().to_string(),
+        file_path: csv_file
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
         encoding_tested: encoding.to_string(),
         status: status.to_string(),
-        rows: None, cols: None, cells: None,
+        rows: None,
+        cols: None,
+        cells: None,
         error_message: Some(error_message.to_string()),
     }
 }
 
 fn truncate_middle_egui(s: &str, max_len: usize) -> String {
     let char_count = s.chars().count();
-    if char_count <= max_len { return s.to_string(); }
-    if max_len <= 3 { return s.chars().take(max_len).collect(); }
+    if char_count <= max_len {
+        return s.to_string();
+    }
+    if max_len <= 3 {
+        return s.chars().take(max_len).collect();
+    }
     let ellipsis = "...";
     let ellipsis_len = ellipsis.chars().count();
     let max_text_len = max_len.saturating_sub(ellipsis_len); // Ensure non-negative
@@ -454,8 +613,11 @@ fn truncate_middle_egui(s: &str, max_len: usize) -> String {
         front_len = max_text_len.saturating_sub(1);
     }
 
-
     let front: String = s.chars().take(front_len).collect();
-    let back: String = s.chars().skip(char_count.saturating_sub(back_len)).take(back_len).collect();
+    let back: String = s
+        .chars()
+        .skip(char_count.saturating_sub(back_len))
+        .take(back_len)
+        .collect();
     format!("{}{}{}", front, ellipsis, back)
 }
